@@ -26,11 +26,32 @@
     img = octx.createImageData(W, H);
   }
 
+  /* 改窗口大小时把三种墨按新网格重新采样，而不是整张清空 */
+  function resample(src, oW, oH) {
+    var out = new Float32Array(SZ);
+    for (var j = 1; j <= H; j++) {
+      for (var i = 1; i <= W; i++) {
+        var x = (i - 0.5) / W * oW + 0.5, y = (j - 0.5) / H * oH + 0.5;
+        var i0 = Math.max(1, Math.min(oW, x | 0)), j0 = Math.max(1, Math.min(oH, y | 0));
+        var i1 = Math.min(oW, i0 + 1), j1 = Math.min(oH, j0 + 1);
+        var s1 = Math.max(0, Math.min(1, x - i0)), t1 = Math.max(0, Math.min(1, y - j0));
+        var R = oW + 2;
+        out[IX(i, j)] = (1 - s1) * ((1 - t1) * src[i0 + j0 * R] + t1 * src[i0 + j1 * R]) +
+          s1 * ((1 - t1) * src[i1 + j0 * R] + t1 * src[i1 + j1 * R]);
+      }
+    }
+    return out;
+  }
+
   function resize(aspect) {
+    var oW = W, oH = H, oI = dI, oWm = dW, oC = dC;
     W = 112;
     H = Math.max(28, Math.round(W / Math.max(0.6, aspect)));
     if (H > 96) H = 96;
     alloc();
+    if (oI && oW && oH) {
+      dI = resample(oI, oW, oH); dW = resample(oWm, oW, oH); dC = resample(oC, oW, oH);
+    }
   }
 
   function setBnd(b, x) {
@@ -149,7 +170,10 @@
   }
 
   function step(dt) {
+    if (!(dt > 0)) return;
     var t = performance.now() / 1000;
+    // 衰减按时间算，120Hz 屏幕上墨不会比 60Hz 散得快一倍
+    var k60 = dt * 60, fd = Math.pow(fade, k60), damp = Math.pow(0.994, k60);
     // 环境微流：让墨自己慢慢游走
     var amp = 0.06 + windX * 0.4;
     for (var j = 1; j <= H; j += 2) {
@@ -157,8 +181,8 @@
         var id = IX(i, j);
         var nx = Math.sin(i * 0.11 + t * 0.31) + Math.cos(j * 0.17 - t * 0.22);
         var ny = Math.cos(i * 0.13 - t * 0.24) + Math.sin(j * 0.11 + t * 0.19);
-        u[id] += (nx * 0.006 + windX * 0.012) * amp;
-        v[id] += (ny * 0.004 + windY * 0.008) * amp;
+        u[id] += (nx * 0.006 + windX * 0.012) * amp * k60;
+        v[id] += (ny * 0.004 + windY * 0.008) * amp * k60;
       }
     }
 
@@ -184,8 +208,8 @@
     advect(0, dC, tC, u, v, dt);
 
     for (var k = 0; k < SZ; k++) {
-      dI[k] *= fade; dW[k] *= fade; dC[k] *= fade;
-      u[k] *= 0.994; v[k] *= 0.994;
+      dI[k] *= fd; dW[k] *= fd; dC[k] *= fd;
+      u[k] *= damp; v[k] *= damp;
       if (dI[k] > 2.2) dI[k] = 2.2;
       if (dW[k] > 2.2) dW[k] = 2.2;
       if (dC[k] > 2.2) dC[k] = 2.2;

@@ -151,6 +151,11 @@ body{
 .pinyincard .gloss{font-size:14px;letter-spacing:2px;color:#6d604c}
 .pinyincard .words{display:flex;gap:10px;font-size:14px;letter-spacing:2px;color:#7a6b54}
 .pinyincard .words b{font-weight:400;padding:2px 10px;border:1px solid rgba(120,104,78,.35);border-radius:999px;background:rgba(250,246,235,.4)}
+.pinyincard .zi,.pinyincard .words b{pointer-events:auto;cursor:pointer}
+.pinyincard .zi:hover,.pinyincard .words b:hover{color:var(--seal)}
+.keys{align-items:center}
+.keys .tag{font-size:13px;letter-spacing:1px;color:#7a6b54;padding:2px 8px;border:1px solid rgba(120,104,78,.3);border-radius:999px;background:rgba(250,246,235,.5)}
+.keys .tag.tone1{color:#2f5f8f}.keys .tag.tone2{color:#3c7a4a}.keys .tag.tone3{color:#a5671a}.keys .tag.tone4{color:#a52a2a}
 
 /* ---------- 字表面板 ---------- */
 .panel{
@@ -179,7 +184,8 @@ body{
 
 .footnote{
   position:absolute;z-index:18;left:50%;bottom:14px;transform:translateX(-50%);
-  font-size:12px;letter-spacing:3px;color:#9a8b72;pointer-events:none;white-space:nowrap;
+  font-size:12px;letter-spacing:3px;color:#9a8b72;pointer-events:none;
+  width:max-content;max-width:calc(100vw - 60px);text-align:center;
 }
 
 #ime{position:absolute;z-index:40;left:50%;top:70%;width:2px;height:2px;opacity:0;border:0;padding:0;background:none;color:transparent}

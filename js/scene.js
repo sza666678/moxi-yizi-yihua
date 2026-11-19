@@ -9,9 +9,37 @@
   var wind = 0, gust = 0, phase = rnd(0, 10), t = 0;
   var weather = 'clear', weatherLeft = 0;
 
+  // 活景数量设上限：一节课打几十个字，帧率也不往下掉
+  var CAP = { clouds: 12, willows: 6, trees: 6 };
+  function capped(list, max) { while (list.length > max) list.shift(); }
+
   function resize(w, h) {
+    // 已有的柳、鱼、云、树跟着纸一起缩放，别留在旧坐标上
+    if (W && H && (w !== W || h !== H)) {
+      var sx = w / W, sy = h / H, sm = Math.min(sx, sy);
+      [clouds, fishes, birds, petals, ripples].forEach(function (list) {
+        list.forEach(function (o) { o.x *= sx; o.y *= sy; });
+      });
+      willows.forEach(function (o) {
+        o.x *= sx; o.y *= sy; o.s *= sm;
+        o.strands.forEach(function (st) { st.ox *= sm; st.oy *= sm; st.len *= sm; st.wid *= sm; });
+      });
+      trees.forEach(function (o) { o.x *= sx; o.y *= sy; o.s *= sm; });
+      clouds.forEach(function (o) { o.s *= sm; });
+      fishes.forEach(function (o) { o.s *= sm; });
+    }
     W = w; H = h;
     buildTerrain();
+  }
+
+  // 撤销某个字时，把它带出来的活景一起收走
+  function remove(objs) {
+    (objs || []).forEach(function (o) {
+      [clouds, willows, fishes, trees, birds].forEach(function (list) {
+        var i = list.indexOf(o);
+        if (i >= 0) list.splice(i, 1);
+      });
+    });
   }
 
   function buildTerrain() {
@@ -43,6 +71,7 @@
       c.lobes.push({ dx: rnd(-1.4, 1.4), dy: rnd(-0.35, 0.35), r: rnd(0.4, 1), a: rnd(0.3, 1) });
     }
     clouds.push(c);
+    capped(clouds, CAP.clouds);
     return c;
   }
 
@@ -75,19 +104,26 @@
       });
     }
     willows.push(w);
+    capped(willows, CAP.willows);
     return w;
   }
 
   function addTree(x, y, kind, s) {
-    trees.push({ x: x, y: y, kind: kind, s: s, cool: 0 });
+    var tr = { x: x, y: y, kind: kind, s: s, cool: 0 };
+    trees.push(tr);
+    capped(trees, CAP.trees);
+    return tr;
   }
 
   function addBird(x, y) {
-    birds.push({
+    var b = {
       x: x === undefined ? -30 : x,
       y: y === undefined ? rnd(H * 0.1, H * 0.32) : y,
       v: rnd(26, 58), s: rnd(H * 0.013, H * 0.024), ph: rnd(0, 6.28)
-    });
+    };
+    birds.push(b);
+    capped(birds, 12);
+    return b;
   }
 
   function setWeather(kind, seconds) {
@@ -498,6 +534,7 @@
     setWeather: setWeather,
     gustWind: gustWind,
     clearAll: clearAll,
+    remove: remove,
     get wind() { return wind; },
     get weather() { return weather; },
     get counts() { return { fish: fishes.length, willow: willows.length, cloud: clouds.length, petal: petals.length }; }

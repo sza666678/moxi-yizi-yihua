@@ -227,15 +227,41 @@
     return BASE.charAt(Math.floor(i / 4));
   }
 
+  // 小学课本里的 16 个整体认读音节：不拆声母韵母
+  var WHOLE = {
+    zhi: 1, chi: 1, shi: 1, ri: 1, zi: 1, ci: 1, si: 1,
+    yi: 1, wu: 1, yu: 1, ye: 1, yue: 1, yuan: 1, yin: 1, yun: 1, ying: 1
+  };
+  // j q x y 后面的 u 其实是 ü（“小ü见了j q x，去掉两点还念ü”），拆开时把两点还回来
+  var U_TO_UE = { 'u': 'ü', 'ū': 'ǖ', 'ú': 'ǘ', 'ǔ': 'ǚ', 'ù': 'ǜ' };
+
   function splitPy(py) {
     var letters = bare(py);
+    if (WHOLE[letters]) return { initial: '', final: '', whole: true };
     for (var i = 0; i < INITIALS.length; i++) {
       var s = INITIALS[i];
       if (letters.indexOf(s) === 0 && letters.length > s.length) {
-        return { initial: s, final: py.slice(s.length) };
+        var fin = py.slice(s.length);
+        if (/^[jqxy]$/.test(s) && U_TO_UE[fin.charAt(0)]) fin = U_TO_UE[fin.charAt(0)] + fin.slice(1);
+        return { initial: s, final: fin, whole: false };
       }
     }
-    return { initial: '', final: py };
+    return { initial: '', final: py, whole: false };
+  }
+
+  function entry(ch, py, gloss, words, motif) {
+    var sp = splitPy(py);
+    return {
+      ch: ch,
+      py: py,
+      initial: sp.initial,
+      final: sp.final,
+      whole: sp.whole,
+      tone: toneOf(py),
+      gloss: gloss,
+      words: words,
+      motif: motif || 'glyph'
+    };
   }
 
   function toneOf(py) {
@@ -249,24 +275,14 @@
   var ZI = {};
   Object.keys(RAW).forEach(function (ch) {
     var v = RAW[ch];
-    var sp = splitPy(v[0]);
-    ZI[ch] = {
-      ch: ch,
-      py: v[0],
-      initial: sp.initial,
-      final: sp.final,
-      tone: toneOf(v[0]),
-      gloss: v[1],
-      words: v[2].split(','),
-      motif: v[3] || 'glyph'
-    };
+    ZI[ch] = entry(ch, v[0], v[1], v[2].split(','), v[3]);
   });
 
   var GROUPS = [
-    { name: '天地自然', chars: '日月星辰天山地水石云风雷虹雨雪雾霜露霞泉溪江河湖海波冰火烟光影春秋冬晨夜' },
-    { name: '草木庄稼', chars: '花草叶枝树林木竹松柏柳桃梅兰菊荷莲萍苗芽果瓜稻麦豆茶田禾' },
+    { name: '天地自然', chars: '日月星辰天山地水石云风雷电虹雨雪雾霜露霞泉溪江河湖海波浪冰火烟光影春夏秋冬晨夜' },
+    { name: '草木庄稼', chars: '花草叶枝树林森木竹松柏柳桃梅兰菊荷莲萍苗芽果瓜稻麦豆茶田禾' },
     { name: '鸟兽虫鱼', chars: '鱼鲤虾蟹龟鸟雀燕雁鹤鹰鸥鸦鹊莺鸡鹅鸭马牛羊猪狗猫虎兔鹿龙凤蛇虫蝶蜂蝉萤蚁蛛蚕' },
-    { name: '人居生活', chars: '人童老家门窗书笔墨纸画诗琴笛鼓钟灯伞扇镜船舟桥亭塔楼寺路车衣帽酒蜜' },
+    { name: '人居生活', chars: '人童老家门窗书笔墨纸画诗琴笛鼓钟灯伞扇镜船帆舟桥亭塔楼寺路车衣帽酒蜜' },
     { name: '身心动作', chars: '心手口目耳头飞游走笑歌舞梦思爱看听读写' },
     { name: '性状颜色', chars: '大小上下中多少高低远近新古红绿蓝白黑黄紫青静香' }
   ];
@@ -281,8 +297,11 @@
     has: function (ch) { return !!ZI[ch]; },
     get: function (ch) {
       if (ZI[ch]) return ZI[ch];
-      // 不在字典里的汉字：仍给一个可用的空壳，交给通用母题
-      return { ch: ch, py: '', initial: '', final: '', tone: 0, gloss: '', words: [], motif: 'glyph' };
+      // 不在字典里的汉字：用本地的 pinyin-pro 补上读音，画面交给通用母题
+      var py = '';
+      try { if (global.pinyinPro) py = global.pinyinPro.pinyin(ch) || ''; } catch (e) { py = ''; }
+      if (py === ch) py = '';
+      return entry(ch, py, '', [], 'glyph');
     }
   };
 })(window);

@@ -33,17 +33,8 @@
     return ctx;
   }
 
-  function snapshotArt() {
-    if (!cArt.width || !placed.length) return null;
-    var t = document.createElement('canvas');
-    t.width = cArt.width; t.height = cArt.height;
-    t.getContext('2d').drawImage(cArt, 0, 0);
-    return t;
-  }
-
   function resize() {
     flushReveals();
-    var keep = snapshotArt();
     var oldW = view.w, oldH = view.h;
     hideAim();
     var w = global.innerWidth, h = global.innerHeight;
@@ -58,13 +49,14 @@
     drawPaper(w, h);
     MoInk.resize(w / h);
     MoScene.resize(w, h);
-    if (keep) xArt.drawImage(keep, 0, 0, keep.width, keep.height, 0, 0, w, h);
     if (oldW && oldH && placed.length) {
+      // 位置按比例挪，大小按短边等比缩放，再用各自的种子原样重画——不拉伸、不变样
       placed.forEach(function (p) {
         p.x = p.x / oldW * w;
         p.y = p.y / oldH * h;
         p.r = p.r / Math.min(oldW, oldH) * Math.min(w, h);
       });
+      redrawAll();
     }
   }
 
@@ -206,7 +198,7 @@
   var reveals = [];
   var rvDirty = false;
 
-  function paintOff(key, ch, S) {
+  function paintOff(key, ch, S, seed) {
     var size = Math.round(S * 1.6), pad = (size - S) / 2;
     var cv = document.createElement('canvas');
     cv.width = cv.height = Math.max(2, Math.round(size * view.dpr));
@@ -215,7 +207,7 @@
     x.lineCap = 'round'; x.lineJoin = 'round';
     x.translate(pad, pad);
     x.scale(S / 100, S / 100);
-    MoMotifs.draw(x, key, { ch: ch });
+    MoDraw.withSeed(seed, function () { MoMotifs.draw(x, key, { ch: ch }); });
     return { cv: cv, size: size };
   }
 
@@ -228,8 +220,8 @@
     return t;
   }
 
-  function startReveal(key, ch, spot) {
-    var off = paintOff(key, ch, spot.s);
+  function startReveal(key, ch, spot, seed) {
+    var off = paintOff(key, ch, spot.s, seed);
     var cost = off.size * view.dpr;
     cost *= cost;
     // 同时洇开的量按像素预算收，超了就把最老的直接落成画
@@ -386,16 +378,20 @@
     var spot = aim ? spotAtPoint(aim.x, aim.y) : chooseSpot(ch);
     if (aim) hideAim();
     var key = MoMotifs.has(z.motif) ? z.motif : 'glyph';
-    startReveal(key, ch, spot);
-    placed.push({ x: spot.x, y: spot.y, r: spot.s * 0.5, ch: ch });
+    // 每幅画记住自己的种子：撤销、改窗口大小后重画出来还是这一幅
+    var seed = (Math.random() * 4294967296) >>> 0;
+    startReveal(key, ch, spot, seed);
+    var item = { x: spot.x, y: spot.y, r: spot.s * 0.5, ch: ch, seed: seed, extras: [] };
+    placed.push(item);
 
     seedInk(spot, key, ch);
-    react(ch, key, spot);
+    item.extras = react(ch, key, spot);
 
     if (soundOn) {
       MoAudio.resume();
       MoAudio.strike(z.tone, z.initial);
       MoAudio.rustle(clamp(spot.s / Math.min(view.w, view.h), 0.5, 1.2));
+      speak(ch);
     }
     pushFall(ch, z);
     showPinyin(z);
@@ -403,7 +399,7 @@
   }
 
   function react(ch, key, spot) {
-    var S = spot.s;
+    var S = spot.s, made = [];
     if (ch === '风' || key === 'wind') {
       MoScene.gustWind(1.05);
       MoInk.setWind(MoScene.wind * 1.3, 0.05);
@@ -422,21 +418,22 @@
       MoScene.setWeather('clear', 0);
       rainSound(false);
     } else if (key === 'willow') {
-      MoScene.addWillow(spot.x, spot.y - S * 0.1, S * 0.62);
+      made.push(MoScene.addWillow(spot.x, spot.y - S * 0.1, S * 0.62));
     } else if (key === 'fish') {
-      for (var f = 0; f < rint(2, 4); f++) MoScene.addFish(spot.x + rnd(-S * .3, S * .3), spot.y + rnd(-S * .2, S * .2));
+      for (var f = 0, nf = rint(2, 4); f < nf; f++) made.push(MoScene.addFish(spot.x + rnd(-S * .3, S * .3), spot.y + rnd(-S * .2, S * .2)));
     } else if (key === 'cloud' || key === 'mist') {
-      for (var c = 0; c < 2; c++) MoScene.addCloud(spot.x + rnd(-S * .3, S * .3), rnd(view.h * 0.08, view.h * 0.3));
+      for (var c = 0; c < 2; c++) made.push(MoScene.addCloud(spot.x + rnd(-S * .3, S * .3), rnd(view.h * 0.08, view.h * 0.3)));
     } else if (key === 'bird' || key === 'swallow' || key === 'crane' || key === 'butterfly' || key === 'bee' || key === 'firefly') {
-      for (var b = 0; b < rint(1, 3); b++) MoScene.addBird(rnd(-view.w * 0.1, view.w * 0.5), rnd(view.h * 0.06, view.h * 0.34));
+      for (var b = 0, nb = rint(1, 3); b < nb; b++) made.push(MoScene.addBird(rnd(-view.w * 0.1, view.w * 0.5), rnd(view.h * 0.06, view.h * 0.34)));
     } else if (key === 'plum' || key === 'peach' || key === 'blossom') {
-      MoScene.addTree(spot.x, spot.y - S * 0.25, key === 'plum' ? 'plum' : 'pink', S);
+      made.push(MoScene.addTree(spot.x, spot.y - S * 0.25, key === 'plum' ? 'plum' : 'pink', S));
     } else if (key === 'water' || key === 'wave' || key === 'lotus') {
       for (var r = 0; r < 3; r++) MoInk.addDensity(rnd(0.15, 0.75), rnd(0.55, 0.85), 0.05, 0.35, 'cool');
     } else if (key === 'rainbow') {
       MoScene.setWeather('clear', 0);
       rainSound(false);
     }
+    return made;
   }
 
   var rainWanted = false;
@@ -451,7 +448,8 @@
     row.className = 'row';
     row.innerHTML = '<span class="zi">' + ch + '</span>' +
       (z.py ? '<span class="py">' + z.py + '</span>' : '');
-    elFall.appendChild(row);
+    // 落款印章始终压在列表最底下，新字排在它上面
+    elFall.insertBefore(row, elFall.querySelector('.seal'));
     var kids = elFall.querySelectorAll('.row');
     if (kids.length > 11) {
       kids[0].parentNode.removeChild(kids[0]);
@@ -469,21 +467,49 @@
     }
   }
 
+  /* ---------------- 读音 ---------------- */
+  var TONE_NAME = ['', '一声', '二声', '三声', '四声', '轻声'];
+  var zhVoice = null;
+  function pickVoice() {
+    var vs = global.speechSynthesis ? global.speechSynthesis.getVoices() : [];
+    zhVoice = null;
+    for (var i = 0; i < vs.length && !zhVoice; i++) if (/zh[-_]CN/i.test(vs[i].lang)) zhVoice = vs[i];
+    for (var j = 0; j < vs.length && !zhVoice; j++) if (/^zh/i.test(vs[j].lang)) zhVoice = vs[j];
+  }
+  if (global.speechSynthesis) { pickVoice(); global.speechSynthesis.onvoiceschanged = pickVoice; }
+  // 用系统自带的中文语音读出来；连着打几个字会排队一个个读
+  function speak(text) {
+    if (!soundOn || !global.speechSynthesis || !global.SpeechSynthesisUtterance) return;
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN'; u.rate = 0.8;
+    if (zhVoice) u.voice = zhVoice;
+    global.speechSynthesis.speak(u);
+  }
+  elCard.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-say]') : null;
+    if (!t) return;
+    global.speechSynthesis && global.speechSynthesis.cancel();
+    var was = soundOn; soundOn = true; speak(t.getAttribute('data-say')); soundOn = was;
+  });
+
   /* ---------------- 拼音卡 ---------------- */
   function showPinyin(z) {
     elKeys.innerHTML = '';
     if (z.py) {
-      var whole = !z.initial || z.initial === 'y' || z.initial === 'w';
-      if (whole) {
-        elKeys.innerHTML = '<span class="key whole" title="整体认读">' + z.py + '</span>';
+      if (z.whole) {
+        elKeys.innerHTML = '<span class="key whole" title="整体认读音节">' + z.py + '</span><span class="tag">整体认读</span>';
+      } else if (!z.initial) {
+        elKeys.innerHTML = '<span class="key final" title="零声母，只有韵母">' + z.final + '</span><span class="tag">零声母</span>';
       } else {
         elKeys.innerHTML = '<span class="key" title="声母">' + z.initial + '</span>' +
           '<span class="key final" title="韵母">' + z.final + '</span>';
       }
+      elKeys.innerHTML += '<span class="tag tone' + z.tone + '">' + (TONE_NAME[z.tone] || '') + '</span>';
     }
     elZi.textContent = z.ch;
-    elGloss.textContent = z.gloss || '这个字还没收录，且看它自己长成一幅画';
-    elWords.innerHTML = (z.words || []).map(function (wd) { return '<b>' + wd + '</b>'; }).join('');
+    elZi.setAttribute('data-say', z.ch);
+    elGloss.textContent = z.gloss || (z.py ? '这个字还没有收进字表，先听听它怎么读' : '这个字还没收录，且看它自己长成一幅画');
+    elWords.innerHTML = (z.words || []).map(function (wd) { return '<b data-say="' + wd + '">' + wd + '</b>'; }).join('');
     elCard.classList.add('show');
   }
 
@@ -529,6 +555,7 @@
     else if (act === 'sound') {
       soundOn = !soundOn;
       b.classList.toggle('active', soundOn);
+      if (!soundOn && global.speechSynthesis) global.speechSynthesis.cancel();
       MoAudio.setEnabled(soundOn);
       rainSound(rainWanted || MoScene.weather === 'rain');
       if (soundOn) { MoAudio.resume(); MoAudio.sweep(); }
@@ -549,6 +576,7 @@
     placed = []; falled = 0; titleHidden = false;
     elFall.innerHTML = '';
     elCard.classList.remove('show');
+    if (global.speechSynthesis) global.speechSynthesis.cancel();
     elTitle.classList.remove('hide');
     rainSound(false);
     seedIdle();
@@ -598,16 +626,14 @@
   });
   elIME.addEventListener('input', function () {
     if (composingNow) return;
+    // 粘贴或混着英文数字时，只留下其中的汉字，而不是整串丢掉
     var v = elIME.value;
-    if (v && !isHan(v.charAt(0))) { elIME.value = ''; return; }
-    commitString(v);
     elIME.value = '';
+    commitString(v);
   });
   function commitString(s) {
-    for (var i = 0; i < s.length; i++) {
-      var ch = s.charAt(i);
-      if (isHan(ch)) fallChar(ch);
-    }
+    // 按码点遍历，扩展区汉字（两个 UTF-16 单元）也不会被拆坏
+    Array.from(s || '').forEach(function (ch) { if (isHan(ch)) fallChar(ch); });
   }
 
   stage.addEventListener('pointerdown', function (e) {
@@ -624,10 +650,13 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { if (aim) { hideAim(); return; } closeTable(); return; }
-    if (e.key === 'Backspace' && !composingNow && placed.length) {
-      // 倒悔：擦掉最后一幅，重画其余
-      placed.pop();
+    // Safari 会先发 compositionend 再发 keydown：用 isComposing / 229 兜住，删拼音时不误删画
+    if (e.key === 'Backspace' && !composingNow && !e.isComposing && e.keyCode !== 229 && placed.length) {
+      // 倒悔：擦掉最后一幅（连同它带出的柳、鱼、云），其余按原种子重画，不变样
+      var gone = placed.pop();
+      MoScene.remove(gone.extras);
       redrawAll();
+      elCard.classList.remove('show');
       var rows = elFall.querySelectorAll('.row');
       if (rows.length) rows[rows.length - 1].parentNode.removeChild(rows[rows.length - 1]);
       falled = Math.max(0, falled - 1);
@@ -649,7 +678,7 @@
       xArt.translate(p.x - p.r * 2 / 2, p.y - p.r * 2 / 2);
       xArt.scale(p.r * 2 / 100, p.r * 2 / 100);
       xArt.lineCap = 'round'; xArt.lineJoin = 'round';
-      MoMotifs.draw(xArt, key, { ch: p.ch });
+      MoDraw.withSeed(p.seed, function () { MoMotifs.draw(xArt, key, { ch: p.ch }); });
       xArt.restore();
       placed.push(p);
     });

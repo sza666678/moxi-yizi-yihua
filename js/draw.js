@@ -10,15 +10,32 @@
   var FONT_BRUSH = '"STXingkai","华文行楷","Xingkai SC","STKaiti","KaiTi","楷体",serif';
   var FONT_KAI = '"STKaiti","KaiTi","Kaiti SC","楷体",serif';
 
+  /* 随机源：默认 Math.random；withSeed 期间换成可复现的种子随机，
+     这样撤销、改窗口大小时重画出来的还是同一幅画 */
+  var RNG = Math.random;
+  function mulberry(a) {
+    return function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function withSeed(seed, fn) {
+    var prev = RNG;
+    RNG = mulberry(seed >>> 0);
+    try { return fn(); } finally { RNG = prev; }
+  }
+
   function rnd(a, b) {
     if (b === undefined) { b = a; a = 0; }
-    return a + Math.random() * (b - a);
+    return a + RNG() * (b - a);
   }
   function rint(a, b) { return Math.floor(rnd(a, b + 1)); }
-  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
-  function chance(p) { return Math.random() < p; }
+  function pick(list) { return list[Math.floor(RNG() * list.length)]; }
+  function chance(p) { return RNG() < p; }
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
-  function sign() { return Math.random() < 0.5 ? -1 : 1; }
+  function sign() { return RNG() < 0.5 ? -1 : 1; }
 
   /* Catmull-Rom 重采样，让折线变成笔意曲线 */
   function smooth(pts, seg) {
@@ -69,7 +86,7 @@
       var len = Math.sqrt(dx * dx + dy * dy) || 1;
       var nx = -dy / len, ny = dx / len;
       var w = (w0 + (w1 - w0) * t) * f(t) * grow;
-      var j = (Math.random() - 0.5) * w * jitter;
+      var j = (RNG() - 0.5) * w * jitter;
       L.push({ x: p.x + nx * (w / 2 + j), y: p.y + ny * (w / 2 + j), w: w });
       R.push({ x: p.x - nx * (w / 2 + j), y: p.y - ny * (w / 2 + j), w: w });
     }
@@ -126,7 +143,7 @@
           var y = P[i].y + ny * off + rnd(-0.2, 0.2);
           if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
         }
-        ctx.globalAlpha = o.dry * (0.4 + Math.random() * 0.6);
+        ctx.globalAlpha = o.dry * (0.4 + RNG() * 0.6);
         ctx.lineWidth = Math.max(0.25, w0 * 0.16);
         ctx.strokeStyle = '#000';
         ctx.stroke();
@@ -539,6 +556,7 @@
   global.MoDraw = {
     INK: INK, RED: RED, BLUE: BLUE, GREEN: GREEN, GOLD: GOLD,
     FONT_BRUSH: FONT_BRUSH, FONT_KAI: FONT_KAI,
+    withSeed: withSeed,
     rnd: rnd, rint: rint, pick: pick, chance: chance, clamp: clamp, sign: sign,
     smooth: smooth, stroke: stroke, blot: blot, wash: wash, hexA: hexA, colA: colA,
     dot: dot, petal: petal, blade: blade, roundLeaf: roundLeaf,
